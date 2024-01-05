@@ -26,7 +26,7 @@ To install Voogle, follow these steps:
    cd voogle
    ```
 
-3. Install the necessary dependencies:
+3. Compile the programm
 
    ```bash
    v .
