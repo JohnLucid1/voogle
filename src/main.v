@@ -1,36 +1,25 @@
-// voogle:
-// Parses a v directory, takes all function names in types in funciton
-// then on localhost search for function signatures
-// Search sytnax: Returntype(param type, param type): int (string, string)
-
 module main
 
 import os
+import flag
+import v.scanner
 import math
-// import encoding.utf8
 import v.parser
-import arrays
 import v.ast
 import v.pref
-const cli_max = 10
 
-// TODO: using treesitter SQL tables to go structs with json
-// TODO: concurently search folders
-// TODO: maybe create a mutex vec to add to it concurentrly
-// TODO: How the fuck do you get return type of structs instead of fn (voidptr) bool
 struct FnSignature {
 	name        string
 	file_path   string
 	return_type string
-	pos         int
-	ln int
+	ln          int
 	params      []Param
 mut:
 	acc int = -1
 }
 
 fn (v FnSignature) println() {
-	println('${v.file_path}${v.pos}${v.ln} $: ${v.name} :: ${v.params.map(it.type_)} score: ${v.acc}')
+	println('${v.file_path}:${v.ln} ${v.name} :: ${v.params.map(it.type_)} return: ${v.return_type}, acc: ${v.acc}')
 }
 
 struct Param {
@@ -65,79 +54,64 @@ fn calc_distance(str1 string, str2 string) int {
 	return dp[m][n]
 }
 
-// THEN Serailize them with json
-// Implement flag module in it
-// Depenant on the flag, re-serialize directory or not
-// TODO: make it a flag to search by cli
 fn main() {
-	// FIXME: This is a test of data, in future write a function that pulls all files with .v from directory that you get from cmd arguments
-	// TODO: actually implement flags
-	// start_directory := os.args[1]
-	// filepaths := os.walk_ext(start_directory, '.v')
-	// if filepaths.len == 0 {
-	// 	eprintln("Starting directory doesn't contain any .v files")
-	// 	return
-	// }
-
-	// for filepath in filepaths {
-	// 	if !os.exists(filepath) {
-	// 		eprintln('FILEPAHT DOES NOT EXIST')
-	// 		return
-	// 	}
-	// }
-
-	// table := ast.new_table()
-	// prefs := pref.new_preferences()
-	// _ := parser.parse_files(filepaths, table, prefs)
-
-	// mut all_singnatures := []FnSignature{}
-	// for _, fn_signature in table.fns {
-	// 	res := parse_sig(fn_signature, table) or {
-	// 		eprintln(err)
-	// 		return
-	// 	}
-	// 	all_singnatures << res
-	// }
-
-	// all_singnatures.println()
-	// println(calc_distance("main.TEst_some1", "main.test_some1"))
-
-	// TEST: this is a test of cli
-
-	start_directory := os.args[1]
-	input := os.args[2]
-	filepaths := os.walk_ext(start_directory, '.v')
-
-	if filepaths.len == 0 {
-		eprintln("Starting directory doesn't contain any .v files")
-		return
+	mut fp := flag.new_flag_parser(os.args)
+	fp.application("voogle")
+	fp.version("v0.0.1")
+	fp.description("A tool to search v functions by types")
+	path := fp.string('p', 0, "./", "Set filepath or dir to start searching")
+	input := fp.string('i', 0, "", "Search query\n ")
+	if input.len < 1 {
+		println(fp.usage())
+		return 
 	}
 
-	for filepath in filepaths {
-		if !os.exists(filepath) {
-			println('happend there')
-			eprintln('FILEPAHT DOES NOT EXIST')
+	if os.is_file(path){
+
+		table := ast.new_table()
+		prefs := pref.new_preferences()
+		_ := parser.parse_file(path, table, scanner.CommentsMode.skip_comments, prefs)
+
+		mut all_singnatures := []FnSignature{}
+		for _, fn_signature in table.fns {
+			res := parse_sig(fn_signature, table) or { continue }
+			all_singnatures << res
+		}
+		parse_cli(input, mut all_singnatures)
+	} else {
+		filepaths := os.walk_ext(path, '.v')
+
+		if filepaths.len == 0 {
+			eprintln("Starting directory doesn't contain any .v files")
 			return
 		}
-	}
 
-	table := ast.new_table()
-	prefs := pref.new_preferences()
-	_ := parser.parse_files(filepaths, table, prefs)
+		for filepath in filepaths {
+			if !os.exists(filepath) {
+				println('happend there')
+				eprintln('FILEPAHT DOES NOT EXIST')
+				return
+			}
+		}
 
-	mut all_singnatures := []FnSignature{}
-	for _, fn_signature in table.fns {
-		res := parse_sig(fn_signature, table) or { continue }
-		all_singnatures << res
+		table := ast.new_table()
+		prefs := pref.new_preferences()
+		_ := parser.parse_files(filepaths, table, prefs)
+
+		mut all_singnatures := []FnSignature{}
+		for _, fn_signature in table.fns {
+			res := parse_sig(fn_signature, table) or { continue }
+			all_singnatures << res
+		}
+		parse_cli(input, mut all_singnatures)
 	}
-	parse_cli(input, mut all_singnatures)
 }
 
-// TODO: Write init function that takes care of tables and so on
 fn parse_cli(search_str string, mut fn_singatures []FnSignature) ? {
 	ret, types := parse_input(search_str)
-	println('ret: ${ret}, types: ${types}')
-	parsed_types := types.trim("()").split(",")
+	println('Searching for Return type: ${ret}, Parameter types: ${types}')
+	parsed_types := types.trim(' ').split(',')
+	println("\n")
 
 	for mut sig in fn_singatures {
 		ret_dist := calc_distance(ret, sig.return_type)
@@ -147,33 +121,36 @@ fn parse_cli(search_str string, mut fn_singatures []FnSignature) ? {
 
 	fn_singatures.sort(a.acc < b.acc)
 
-	for i in 0 .. cli_max {
+	for i in 0 ..  fn_singatures.len {
 		fn_singatures[i].println()
 	}
 }
 
-fn calc_array(arr1 []string, arr2[]string) int {
+fn calc_array(arr1 []string, arr2 []string) int {
 	mut dist := 0
 	if arr1.len == arr2.len {
 		for i, _ in arr1 {
-			dist += calc_distance(arr1[i], arr2[i])	
+			dist += calc_distance(arr1[i], arr2[i])
 		}
-	}else {
-		if arr1.len > arr2.len{
+	} else {
+		if arr1.len > arr2.len {
 			for i, _ in arr2 {
-				dist += calc_distance(arr1[i], arr2[i])	
-			}			
-		}else {
+				dist += calc_distance(arr1[i], arr2[i])
+			}
+		} else {
 			for i, _ in arr1 {
-				dist += calc_distance(arr1[i], arr2[i])	
-			}			
+				dist += calc_distance(arr1[i], arr2[i])
+			}
 		}
 	}
 	return dist
 }
 
 fn parse_input(search_str string) (string, string) {
-	ret, types := search_str.split_once(' ') or { return '', '' }
+	mut ret, types := search_str.split_once('|') or { '', '' }
+	if ret == " " || ret == "" { // NOTE: maybe change to if_empty() ??
+		ret = "void"
+	}
 	return ret, types
 }
 
@@ -187,8 +164,7 @@ fn parse_sig(sig ast.Fn, table &ast.Table) ?FnSignature {
 			type_: table.get_type_name(it.typ).to_lower()
 		})
 		file_path: sig.file
-		pos: sig.pos.pos
-		ln: sig.pos.line_nr
+		ln: sig.pos.line_nr + 1
 		name: sig.name.to_lower()
 		return_type: table.get_type_name(sig.return_type).to_lower()
 	}
