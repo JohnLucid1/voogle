@@ -1,5 +1,6 @@
 module main
 
+import term
 import os
 import flag
 import v.scanner
@@ -8,6 +9,7 @@ import v.parser
 import v.ast
 import v.pref
 
+// TODO: Search on diff scopes
 struct FnSignature {
 	name        string
 	file_path   string
@@ -19,7 +21,7 @@ mut:
 }
 
 fn (v FnSignature) println() {
-	println('${v.file_path}:${v.ln} ${v.name} :: ${v.params.map(it.type_)} return: ${v.return_type}, acc: ${v.acc}')
+	println('${term.bright_yellow(v.file_path)} ${term.green(v.name)} :: ${v.params.map(term.blue(it.type_))} RETURNS: ${term.red(v.return_type)}')
 }
 
 struct Param {
